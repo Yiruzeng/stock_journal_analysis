@@ -19,7 +19,8 @@ from openai import OpenAI
 st.set_page_config(
     page_title="AI 個股投資日誌分析系統",
     page_icon="📊",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"  # 強制預設展開
 )
 
 # 注入自定義 CSS 來改變介面顏色與按鈕風格
@@ -30,8 +31,10 @@ st.markdown("""
         background-color: #F4F6F8;
     }
     
-    /* 隱藏預設頂部裝飾條 */
-    header {visibility: hidden;}
+    /* 只隱藏頂部的彩色裝飾條，不隱藏整個 header */
+    [data-testid="stHeader"] {
+    background-color: rgba(0,0,0,0);
+    }
 
     /* 側邊欄背景改為純白 */
     [data-testid="stSidebar"] {
