@@ -13,25 +13,129 @@ import google.generativeai as genai
 from openai import OpenAI 
 
 # ============================================
-# 頁面設定
+# 頁面設定與自定義 UI 樣式 (對齊 Dashboard 參考圖)
 # ============================================
 
 st.set_page_config(
-    page_title="AI 投資日誌分析系統",
+    page_title="AI 個股投資日誌分析系統",
     page_icon="📊",
     layout="wide"
 )
+
+# 注入自定義 CSS 來改變介面顏色與按鈕風格
+st.markdown("""
+<style>
+    /* 整體背景色 (非常淺的灰白，凸顯卡片) */
+    .stApp {
+        background-color: #F4F6F8;
+    }
+    
+    /* 隱藏預設頂部裝飾條 */
+    header {visibility: hidden;}
+
+    /* 側邊欄背景改為純白 */
+    [data-testid="stSidebar"] {
+        background-color: #FFFFFF !important;
+        border-right: 1px solid #EBEBEB;
+    }
+
+    /* 🌟 新增：文字輸入框 (API Key 等) 外框設計 */
+    div[data-testid="stTextInput"] div[data-baseweb="input"] {
+        border: 1px solid #D1D5DB !important; /* 細線灰線 */
+        border-radius: 8px !important; /* 微圓角 */
+        background-color: #FFFFFF !important;
+        transition: all 0.2s ease-in-out;
+    }
+    /* 輸入框點擊/聚焦時的狀態 */
+    div[data-testid="stTextInput"] div[data-baseweb="input"]:focus-within {
+        border-color: #DF644E !important; /* 聚焦時變成主色調橘紅色 */
+        box-shadow: 0 0 0 1px rgba(223, 100, 78, 0.2) !important;
+    }
+
+    /* 主要按鈕 (Primary) - 對應圖中的橘紅色按鈕 */
+    button[kind="primary"] {
+        background-color: #DF644E !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 20px !important; /* 大圓角 */
+        padding: 0.5rem 1rem !important;
+        font-weight: 600 !important;
+        transition: all 0.2s ease-in-out;
+    }
+    button[kind="primary"]:hover {
+        background-color: #C8543F !important;
+        box-shadow: 0px 4px 10px rgba(223, 100, 78, 0.3);
+    }
+
+    /* 次要按鈕 (Secondary) - 白底、黑字、淺灰邊框 */
+    button[kind="secondary"] {
+        background-color: #FFFFFF !important;
+        color: #333333 !important;
+        border: 1px solid #E2E2E2 !important;
+        border-radius: 20px !important;
+        font-weight: 600 !important;
+        transition: all 0.2s ease-in-out;
+    }
+    button[kind="secondary"]:hover {
+        border-color: #DF644E !important;
+        color: #DF644E !important;
+    }
+
+    /* 四大數據卡片 (Metrics) - 白色圓角卡片帶輕微陰影 */
+    [data-testid="stMetric"] {
+        background-color: #FFFFFF;
+        padding: 20px;
+        border-radius: 16px;
+        box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.04);
+        border: 1px solid #F0F0F0;
+    }
+    /* 數據卡片的標籤顏色微調 */
+    [data-testid="stMetricLabel"] {
+        color: #666666 !important;
+        font-weight: 500;
+    }
+
+    /* 分頁標籤 (Tabs) 設計 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: transparent;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 48px;
+        background-color: #FFFFFF;
+        border-radius: 12px 12px 0 0;
+        padding: 0 24px;
+        border: 1px solid #EBEBEB;
+        border-bottom: none;
+        color: #666666;
+    }
+    /* 選中的分頁標籤 - 套用主色調 */
+    .stTabs [aria-selected="true"] {
+        background-color: #DF644E !important;
+        color: white !important;
+        border-color: #DF644E !important;
+    }
+    .stTabs [aria-selected="true"] p {
+        color: white !important;
+        font-weight: bold !important;
+    }
+
+    /* 表格背景白底化 */
+    [data-testid="stDataFrame"] {
+        background-color: #FFFFFF;
+        border-radius: 12px;
+        padding: 10px;
+        box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.02);
+    }
+</style>
+""", unsafe_allow_html=True)
+
 
 # ============================================
 # 工具函數區
 # ============================================
 
-# CSV 驗證函數
 def validate_trading_journal(df):
-    """
-    驗證投資日誌格式
-    返回：(is_valid, error_messages, warnings)
-    """
     errors = []
     warnings = []
     
@@ -90,11 +194,7 @@ def validate_trading_journal(df):
     is_valid = len(errors) == 0
     return is_valid, errors, warnings
 
-# FIFO 績效計算函數
 def calculate_fifo_performance(df, current_prices):
-    """
-    使用 FIFO 規則計算投資績效
-    """
     df = df.sort_values('Date').copy()
     holdings = {}  
     trade_history = {}
@@ -186,22 +286,19 @@ def calculate_fifo_performance(df, current_prices):
     }
 
 # ============================================
-# API 呼叫區塊 (報價改為 yfinance)
+# API 呼叫區塊
 # ============================================
 
 @st.cache_data(ttl=300)
 def get_stock_quote(symbol):
-    """獲取當前報價 (改用 yfinance 支援台股)"""
     try:
         ticker = yf.Ticker(symbol)
         return ticker.fast_info['last_price']
     except Exception as e:
-        st.warning(f"⚠️ 無法獲取 {symbol} 當前報價: {e}")
         return 0
 
 @st.cache_data(ttl=3600)
 def get_historical_price(symbol, start_date, end_date):
-    """獲取歷史股價 (改用 yfinance 支援台股)"""
     try:
         ticker = yf.Ticker(symbol)
         start_str = start_date.strftime('%Y-%m-%d')
@@ -212,7 +309,6 @@ def get_historical_price(symbol, start_date, end_date):
             return None
             
         df = df.reset_index()
-        # 移除時區，避免繪圖錯誤
         if df['Date'].dt.tz is not None:
             df['Date'] = df['Date'].dt.tz_localize(None)
             
@@ -222,10 +318,8 @@ def get_historical_price(symbol, start_date, end_date):
         })
         return df.sort_values('date')
     except Exception as e:
-        st.error(f"❌ 獲取 {symbol} 歷史股價失敗: {str(e)}")
         return None
 
-# FMP 基本面資料 (僅供美股使用，可選)
 @st.cache_data(ttl=3600)
 def get_fmp_profile(symbol, api_key):
     if not api_key: return {}
@@ -242,20 +336,11 @@ def get_fmp_key_metrics(symbol, api_key):
         return res.json() if res.json() else []
     except: return []
 
-@st.cache_data(ttl=3600)
-def get_fmp_ratios(symbol, api_key):
-    if not api_key: return []
-    try:
-        res = requests.get(f"https://financialmodelingprep.com/stable/ratios?symbol={symbol}&limit=4&apikey={api_key}", timeout=5)
-        return res.json() if res.json() else []
-    except: return []
-
 # ============================================
-# AI 分析相關函數 (雙引擎版)
+# AI 分析相關函數
 # ============================================
 
 def prepare_ai_analysis_data(df, performance, fmp_data, news_data, symbol):
-    """準備 AI 分析資料"""
     symbol_trades = df[df['Symbol'] == symbol].sort_values('Date').to_dict('records')
     trade_hist = performance['trade_history'].get(symbol, [])
     
@@ -286,7 +371,6 @@ def prepare_ai_analysis_data(df, performance, fmp_data, news_data, symbol):
     if price_data is not None and not price_data.empty:
         price_context = {
             'first_price': price_data['close'].iloc[0], 'last_price': price_data['close'].iloc[-1],
-            'period_high': price_data['high'].max(), 'period_low': price_data['low'].min(),
             'overall_change_pct': ((price_data['close'].iloc[-1] - price_data['close'].iloc[0]) / price_data['close'].iloc[0] * 100)
         }
     
@@ -308,7 +392,6 @@ def prepare_ai_analysis_data(df, performance, fmp_data, news_data, symbol):
     return {'symbol': symbol, 'trades': symbol_trades, 'performance': perf_data, 'price_context': price_context, 'company_info': company_info, 'key_metrics': key_metrics_summary}
 
 def generate_ai_analysis_prompt(analysis_data):
-    """生成 AI Prompt"""
     symbol = analysis_data['symbol']
     trades = analysis_data['trades']
     perf = analysis_data['performance']
@@ -340,116 +423,100 @@ def generate_ai_analysis_prompt(analysis_data):
 """
     return prompt
 
-# Gemini API 呼叫函數
-def call_gemini_api(prompt, api_key):
-    try:
-        genai.configure(api_key=api_key)
-        available_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                available_models.append(m.name)
-        
-        if not available_models:
-            return "❌ 您的 Google API Key 目前沒有權限使用任何文字生成模型。"
-
-        chosen_model = available_models[0]
-        for m in available_models:
-            if "flash" in m.lower():
-                chosen_model = m
-                break
-            elif "pro" in m.lower():
-                chosen_model = m
-
-        clean_model_name = chosen_model.replace("models/", "")
-        print(f"👉 使用 Google 模型：{clean_model_name}")
-
-        system_role = "【系統設定：你是一位專業且富有同理心的投資交易分析師，擅長從交易記錄中發現模式並給予客觀、一針見血的建設性建議。】\n\n"
-        full_prompt = system_role + prompt
-
-        model = genai.GenerativeModel(model_name=clean_model_name)
-        response = model.generate_content(full_prompt)
-        return response.text
-
-    except Exception as e:
-        return f"❌ Google Gemini 分析生成失敗: {str(e)}\n\n請檢查 API Key 是否正確。"
-
-# OpenAI API 呼叫函數
-def call_openai_api(prompt, api_key):
-    try:
-        print("👉 使用 OpenAI 模型：gpt-4o-mini")
-        client = OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",  
-            messages=[
-                {"role": "system", "content": "你是一位專業且富有同理心的投資交易分析師，擅長從交易記錄中發現模式並給予客觀、一針見血的建設性建議。"},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7
-        )
-        return response.choices[0].message.content
-        
-    except Exception as e:
-        return f"❌ OpenAI 分析生成失敗: {str(e)}\n\n請檢查 API Key 是否正確，或確認帳號是否有額度。"
-
-# 統整呼叫入口
 def call_ai_analysis(prompt, ai_engine, api_key):
     if ai_engine == "Google Gemini":
-        return call_gemini_api(prompt, api_key)
+        try:
+            genai.configure(api_key=api_key)
+            models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            if not models: return "❌ 您的 Google API Key 目前沒有權限使用任何文字生成模型。"
+            chosen_model = next((m for m in models if "flash" in m.lower()), models[0]).replace("models/", "")
+            model = genai.GenerativeModel(model_name=chosen_model)
+            return model.generate_content("【系統設定：你是一位專業且富有同理心的投資交易分析師，擅長從交易記錄中發現模式並給予客觀的建設性建議。】\n\n" + prompt).text
+        except Exception as e: return f"❌ Gemini 分析生成失敗: {str(e)}"
     elif ai_engine == "OpenAI (ChatGPT)":
-        return call_openai_api(prompt, api_key)
-    else:
-        return "❌ 未知的 AI 引擎設定"
+        try:
+            client = OpenAI(api_key=api_key)
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",  
+                messages=[{"role": "system", "content": "你是一位專業投資交易分析師。"}, {"role": "user", "content": prompt}],
+                temperature=0.7
+            )
+            return response.choices[0].message.content
+        except Exception as e: return f"❌ OpenAI 分析生成失敗: {str(e)}"
 
 # ============================================
 # 視覺化函數
 # ============================================
 def create_candlestick_chart(symbol, price_data, trades_data):
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3], subplot_titles=(f'{symbol} 股價走勢', '成交量'))
+    # 將圖表的背景色也配合改為白色，並隱藏邊框，符合乾淨的卡片設計
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3], subplot_titles=(f'', '成交量'))
     
     fig.add_trace(go.Candlestick(x=price_data['date'], open=price_data['open'], high=price_data['high'], low=price_data['low'], close=price_data['close'], name='K線', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'), row=1, col=1)
     
     price_data['MA5'] = price_data['close'].rolling(window=5).mean()
     price_data['MA20'] = price_data['close'].rolling(window=20).mean()
-    fig.add_trace(go.Scatter(x=price_data['date'], y=price_data['MA5'], mode='lines', name='MA5', line=dict(color='orange', width=1)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=price_data['date'], y=price_data['MA20'], mode='lines', name='MA20', line=dict(color='blue', width=1)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=price_data['date'], y=price_data['MA5'], mode='lines', name='MA5', line=dict(color='#F2B642', width=1.5)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=price_data['date'], y=price_data['MA20'], mode='lines', name='MA20', line=dict(color='#4A90E2', width=1.5)), row=1, col=1)
     
     buy_trades = [t for t in trades_data if t['type'] == 'Buy']
     if buy_trades:
-        fig.add_trace(go.Scatter(x=[t['date'] for t in buy_trades], y=[t['price'] for t in buy_trades], mode='markers+text', marker=dict(size=12, color='green', symbol='triangle-up'), text=['▲'] * len(buy_trades), textposition='top center', name='買入', hovertext=[f"買入 {t['quantity']}股<br>{t['reason'][:20]}" for t in buy_trades]), row=1, col=1)
+        fig.add_trace(go.Scatter(x=[t['date'] for t in buy_trades], y=[t['price'] for t in buy_trades], mode='markers+text', marker=dict(size=12, color='#26a69a', symbol='triangle-up'), text=['▲'] * len(buy_trades), textposition='top center', name='買入', hovertext=[f"買入 {t['quantity']}股<br>{t['reason'][:20]}" for t in buy_trades]), row=1, col=1)
     
     sell_trades = [t for t in trades_data if t['type'] == 'Sell']
     if sell_trades:
-        fig.add_trace(go.Scatter(x=[t['date'] for t in sell_trades], y=[t['price'] for t in sell_trades], mode='markers+text', marker=dict(size=12, color='red', symbol='triangle-down'), text=['▼'] * len(sell_trades), textposition='bottom center', name='賣出', hovertext=[f"賣出 {t['quantity']}股<br>損益: ${t.get('pnl',0):.2f}" for t in sell_trades]), row=1, col=1)
+        fig.add_trace(go.Scatter(x=[t['date'] for t in sell_trades], y=[t['price'] for t in sell_trades], mode='markers+text', marker=dict(size=12, color='#ef5350', symbol='triangle-down'), text=['▼'] * len(sell_trades), textposition='bottom center', name='賣出', hovertext=[f"賣出 {t['quantity']}股<br>損益: ${t.get('pnl',0):.2f}" for t in sell_trades]), row=1, col=1)
     
-    colors = ['red' if c < o else 'green' for c, o in zip(price_data['close'], price_data['open'])]
+    colors = ['#ef5350' if c < o else '#26a69a' for c, o in zip(price_data['close'], price_data['open'])]
     fig.add_trace(go.Bar(x=price_data['date'], y=price_data['volume'], name='成交量', marker_color=colors, showlegend=False), row=2, col=1)
     
-    fig.update_layout(height=600, xaxis_rangeslider_visible=False, hovermode='x unified')
+    fig.update_layout(
+        height=500, 
+        xaxis_rangeslider_visible=False, 
+        hovermode='x unified',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        margin=dict(l=20, r=20, t=30, b=20)
+    )
+    fig.update_xaxes(showgrid=True, gridcolor='#F0F0F0', zeroline=False)
+    fig.update_yaxes(showgrid=True, gridcolor='#F0F0F0', zeroline=False)
+    
     return fig
 
 # ============================================
-# 側邊欄介面
+# 側邊欄與頁面狀態
 # ============================================
 
-st.sidebar.header("📊 AI 投資日誌分析系統", divider="rainbow")
+st.sidebar.markdown("### 📊 AI 投資分析系統")
 
-# 選擇 AI 引擎
-selected_ai = st.sidebar.radio(
-    "🧠 選擇 AI 分析引擎",
-    ["Google Gemini", "OpenAI (ChatGPT)"],
-    help="選擇你想用哪一家 AI 模型來產生分析報告"
+selected_ai = st.sidebar.radio("🧠 選擇 AI 引擎", ["Google Gemini", "OpenAI (ChatGPT)"])
+if selected_ai == "Google Gemini":
+    active_api_key = st.sidebar.text_input("🔑 Gemini API Key", type="password")
+else:
+    active_api_key = st.sidebar.text_input("🔑 OpenAI API Key", type="password")
+
+fmp_api_key = st.sidebar.text_input("🏢 FMP API Key (美股選填)", type="password")
+
+st.sidebar.markdown("<br>", unsafe_allow_html=True)
+
+# --- 📥 新增：內建 CSV 範本下載按鈕 ---
+template_csv = """Date,Type,Symbol,Name,Price,Quantity,Reason
+2026-02-26,Buy,2330.TW,台積電,1800,100,日macd翻紅，拉回等待突破均線小部位卡位(test)
+2026-03-15,Sell,2330.TW,台積電,1843,50,獲利減碼到口袋(test) 
+2026-02-26,Buy,NVDA,NVDA,170,100,波段macd日線翻紅powersqueeze增強(test)
+2026-03-18,Buy,4979.TWO,華星光,373,1000,波段macd日線翻紅powersqueeze增強(test)"""
+
+st.sidebar.download_button(
+    label="📥 下載 CSV 日誌範本",
+    data=template_csv.encode('utf-8-sig'), # 確保 Excel 開啟中文不會亂碼
+    file_name="stock_journal_template.csv",
+    mime="text/csv",
+    help="點擊下載標準格式的 CSV 日誌",
+    use_container_width=True
 )
 
-# 根據選擇顯示對應的 API Key 輸入框
-if selected_ai == "Google Gemini":
-    active_api_key = st.sidebar.text_input("🔑 Google Gemini API Key", type="password", help="從 https://aistudio.google.com/ 取得免費 Key")
-else:
-    active_api_key = st.sidebar.text_input("🔑 OpenAI API Key", type="password", help="從 https://platform.openai.com/ 取得")
+st.sidebar.markdown("<hr style='margin: 10px 0; border-color: #EBEBEB;'>", unsafe_allow_html=True)
 
-st.sidebar.divider()
-fmp_api_key = st.sidebar.text_input("🏢 FMP API Key (選填)", type="password", help="僅用於美股公司基本面數據。台股/不看基本面可不填")
-
-st.sidebar.divider()
+# 原本的上傳區塊
 uploaded_file = st.sidebar.file_uploader("📤 上傳投資日誌 CSV", type=['csv'])
 
 csv_valid = False
@@ -463,156 +530,179 @@ if uploaded_file is not None:
         if is_valid:
             csv_valid = True
             df_validated = df
-            # 清除舊報告緩存
-            keys_to_remove = [k for k in st.session_state.keys() if k.startswith('ai_report_')]
-            for k in keys_to_remove: del st.session_state[k]
-
-            st.sidebar.success("✅ CSV 格式驗證通過")
-            st.sidebar.info(f"📊 總交易: {len(df)} 筆\n涉及股票: {', '.join(df['Symbol'].unique())}")
+            st.sidebar.success("✅ 驗證通過")
         else:
-            st.sidebar.error("❌ CSV 格式驗證失敗")
+            st.sidebar.error("❌ 驗證失敗")
             for error in errors: st.sidebar.error(error)
     except Exception as e:
-        st.sidebar.error(f"❌ 讀取 CSV 失敗: {str(e)}")
+        st.sidebar.error(f"❌ 讀取失敗: {str(e)}")
 
-st.sidebar.divider()
-
-# 新增：日曆時間區間選擇器
-st.sidebar.markdown("### 📅 時間區間篩選")
-if csv_valid and df_validated is not None:
+if csv_valid:
     min_date = df_validated['Date'].min().date()
     max_date = df_validated['Date'].max().date()
-    
-    # 使用 Streamlit 的日期選擇範圍
-    date_range = st.sidebar.date_input(
-        "選擇分析區間 (預設為全期)",
-        value=(min_date, max_date),
-        min_value=min_date,
-        max_value=max_date,
-        format="YYYY/MM/DD",
-        help="選擇的日期將會影響計算與 AI 分析的範圍"
-    )
+    date_range = st.sidebar.date_input("選擇區間", value=(min_date, max_date), min_value=min_date, max_value=max_date, format="YYYY/MM/DD")
 else:
-    # 尚未上傳檔案時的預設空殼
-    date_range = st.sidebar.date_input("選擇分析區間", disabled=True)
+    date_range = st.sidebar.date_input("選擇區間", disabled=True)
 
-st.sidebar.divider()
 enable_ai = st.sidebar.checkbox("啟用 AI 深度分析", value=True, disabled=not csv_valid)
 
-# 分析按鈕邏輯：如果有勾選 AI，則必須有填入對應的 API Key
+if 'start_analysis' not in st.session_state:
+    st.session_state.start_analysis = False
+
 can_analyze = csv_valid and (active_api_key if enable_ai else True)
-analyze_button = st.sidebar.button("🚀 開始分析", type="primary", disabled=not can_analyze, use_container_width=True)
+st.sidebar.markdown("<br>", unsafe_allow_html=True)
+
+if st.sidebar.button("開始分析", type="primary", disabled=not can_analyze, use_container_width=True):
+    keys_to_remove = [k for k in st.session_state.keys() if k.startswith('ai_report_')]
+    for k in keys_to_remove: del st.session_state[k]
+    st.session_state.start_analysis = True
 
 # ============================================
 # 主畫面分析流程
 # ============================================
 
-st.header("📊 AI 投資日誌分析系統", divider="rainbow")
+st.markdown("<h2>📊 Stock Journal Anaysis Dashboard</h2>", unsafe_allow_html=True)
 
 if uploaded_file is None:
+    # 利用三個欄位 (1:2:1 比例) 來讓圖片完美置中顯示，不會過度放大
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        try:
+            # 讀取剛剛存好的圖片
+            st.image("landing_icon.png", use_container_width=True)
+        except FileNotFoundError:
+            # 防呆機制：如果忘記放圖片，會顯示灰色佔位區塊
+            st.markdown("""
+            <div style='text-align: center; padding: 60px; background-color: #EBEBEB; border-radius: 16px; color: #888;'>
+                圖示區塊<br><small>(請將圖片命名為 landing_icon.png 並放於同資料夾)</small>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # 加入與參考圖一致的歡迎標語，並置中對齊
     st.markdown("""
-    ### 歡迎使用！請準備好您的投資日記 CSV
-    **小提醒（台股專用）：** 若要分析台股，請在 CSV 的股票代碼後方加上 `.TW`（上市）或 `.TWO`（上櫃）。例如：`2330.TW`。
+    <div style="text-align: center; margin-top: 10px; margin-bottom: 30px;">
+        <h2 style="color: #333333; font-weight: bold;">Welcome to investment analysis.</h2>
+        <p style="color: #666666; font-size: 16px;">
+            為您的努力變得更強!<br>
+            結合 AI 深度覆盤、投資追蹤紀錄與數據分析檢討。
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    請在左側選擇喜歡的 AI 引擎並貼上 API Key，上傳檔案即可開始。
-    """)
+    # 保留原本的提示框，但稍微修改語氣更符合整體質感
+    st.info("💡 準備就緒：請從左側上傳您的投資日誌 CSV 檔案以啟動儀表板。(台股代碼請加上 .TW 或 .TWO)")
 
-elif analyze_button and csv_valid:
+elif st.session_state.get('start_analysis', False) and csv_valid:
     df = df_validated.copy()
-    
-    # 新增：根據側邊欄的日期區間過濾 DataFrame
     if isinstance(date_range, tuple) and len(date_range) == 2:
-        start_date, end_date = date_range
-        df = df[(df['Date'].dt.date >= start_date) & (df['Date'].dt.date <= end_date)]
+        df = df[(df['Date'].dt.date >= date_range[0]) & (df['Date'].dt.date <= date_range[1])]
         
     if df.empty:
-        st.warning("⚠️ 在選擇的時間區間內沒有任何交易紀錄，請重新選擇日曆範圍。")
+        st.warning("⚠️ 在選擇的時間區間內沒有任何交易紀錄。")
         st.stop()
         
     symbols = df['Symbol'].unique().tolist()
     
-    # --- 1. 抓取當前報價 ---
-    st.subheader("📡 正在獲取股票資料...")
-    current_prices = {}
-    for sym in symbols:
-        price = get_stock_quote(sym)
-        if price: current_prices[sym] = price
+    with st.spinner("📡 同步最新股價資料中..."):
+        current_prices = {}
+        for sym in symbols:
+            price = get_stock_quote(sym)
+            if price: current_prices[sym] = price
     
-    if not current_prices: st.stop()
-    
-    # --- 2. 計算績效 ---
     performance = calculate_fifo_performance(df, current_prices)
     
-    # --- 3. 儀表板 ---
+    # --- 儀表板 (四大指標) ---
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("💰 總投入金額", f"${performance['total_investment']:,.2f}")
     col2.metric("📊 當前市值", f"${performance['total_market_value']:,.2f}")
     col3.metric("📈 總報酬率", f"{performance['total_return_pct']:.2f}%")
     col4.metric("✅ 已實現損益", f"${performance['total_realized_pnl']:,.2f}")
     
-    st.header("📋 當前持倉狀況", divider="rainbow")
+    # --- 總體當前持倉狀況表格 ---
+    st.markdown("<h4 style='margin-top:20px; color:#333;'>📋 當前庫存部位</h4>", unsafe_allow_html=True)
     if performance['current_holdings']:
         holdings_df = pd.DataFrame(performance['current_holdings'])
         holdings_df.columns = ['代碼', '名稱', '持有數量', '平均成本', '當前價格', '總成本', '當前市值', '未實現損益', '報酬率%']
         st.dataframe(holdings_df, use_container_width=True)
-        print("✅ 表格渲染成功，準備抓取歷史 K 線資料...")
-        
-    # --- 4. 股票細節與 AI 分析 (分頁 UI) ---
-    st.header("📈 股價走勢與深度分析", divider="rainbow")
-    
-    all_stock_data = {}
-    for symbol in symbols:
-        symbol_trades = df[df['Symbol'] == symbol]
-        # 圖表抓取區間往前回推一點，讓第一筆交易有上下文
-        start_date_hist = symbol_trades['Date'].min() - timedelta(days=90)  
-        end_date_hist = pd.Timestamp.now()
-        
-        historical = get_historical_price(symbol, start_date_hist, end_date_hist)
-        profile = get_fmp_profile(symbol, fmp_api_key) if fmp_api_key else {}
-        metrics = get_fmp_key_metrics(symbol, fmp_api_key) if fmp_api_key else []
-        
-        all_stock_data[symbol] = {'historical': historical, 'profile': profile, 'key_metrics': metrics}
-        print(f"📡 正在向 Yahoo Finance 請求 {symbol} 的歷史股價...")
-    
-    # 準備分頁 (Tabs) 標題，區分庫存狀態
+    else:
+        st.info("目前無持倉部位。")
+
+    # --- 建立個股分頁 ---
+    st.markdown("<h4 style='margin-top:30px; color:#333;'>🔍 個股深度覆盤</h4>", unsafe_allow_html=True)
     inventory_symbols = [h['symbol'] for h in performance['current_holdings']]
-    tab_titles = []
     
+    tab_titles = []
+    stock_names = {}
     for sym in symbols:
-        stock_name = df[df['Symbol'] == sym]['Name'].iloc[0]
-        # 用綠色與白色圓點，以及文字來明顯區分狀態
+        name = df[df['Symbol'] == sym]['Name'].iloc[0]
+        stock_names[sym] = name
         if sym in inventory_symbols:
-            tab_titles.append(f"🟢 {sym} {stock_name} (有庫存)")
+            tab_titles.append(f"🟢 {sym} {name}")
         else:
-            tab_titles.append(f"⚪ {sym} {stock_name} (已結束)")
+            tab_titles.append(f"⚪ {sym} {name}")
             
-    # 建立 Streamlit 分頁元件
     tabs = st.tabs(tab_titles)
     
-    # 將渲染邏輯放進對應的 Tab 裡
     for i, symbol in enumerate(symbols):
         with tabs[i]:
-            stock_data = all_stock_data[symbol]
-            historical = stock_data['historical']
+            stock_name = stock_names[symbol]
+            symbol_trade_history = performance['trade_history'].get(symbol, [])
+            
+            # --- 1. 先顯示純粹的進出場明細表 ---
+            st.markdown("<h5 style='margin-top:15px; color:#555;'>📝 進出場詳細紀錄</h5>", unsafe_allow_html=True)
+            if symbol_trade_history:
+                history_df = pd.DataFrame(symbol_trade_history)
+                display_df = pd.DataFrame()
+                display_df['日期'] = pd.to_datetime(history_df['date']).dt.strftime('%Y-%m-%d')
+                display_df['動作'] = history_df['type'].map({'Buy': '買入', 'Sell': '賣出'})
+                display_df['價格'] = history_df['price'].apply(lambda x: f"${x:.2f}")
+                display_df['數量'] = history_df['quantity']
+                if 'pnl' in history_df.columns:
+                    display_df['已實現損益'] = history_df['pnl'].apply(lambda x: f"${x:,.2f}" if pd.notna(x) else "-")
+                else:
+                    display_df['已實現損益'] = "-"
+                display_df['交易理由'] = history_df['reason']
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("尚無交易明細紀錄")
+            
+            # --- 2. 直接抓取並顯示歷史 K 線與進出場圖表 ---
+            st.markdown(f"<h5 style='margin-top:15px; color:#555;'>📈 {symbol} {stock_name} 歷史 K 線與交易點位</h5>", unsafe_allow_html=True)
+            symbol_trades = df[df['Symbol'] == symbol]
+            start_date_hist = symbol_trades['Date'].min() - timedelta(days=90)  
+            end_date_hist = pd.Timestamp.now()
+            
+            historical = get_historical_price(symbol, start_date_hist, end_date_hist)
             
             if historical is not None and not historical.empty:
-                symbol_trade_history = performance['trade_history'].get(symbol, [])
                 fig = create_candlestick_chart(symbol, historical, symbol_trade_history)
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("⚠️ 無法抓取歷史 K 線資料，請確認股票代碼或網路狀態。")
+            
+            # --- 3. 延遲的 AI 核心運算：按鈕觸發 ---
+            if enable_ai:
+                report_key = f"ai_report_{symbol}_{selected_ai}"
+                st.markdown(f"<h5 style='margin-top:15px; color:#555;'>🤖 {selected_ai} AI 深度檢討</h5>", unsafe_allow_html=True)
                 
-                # AI 分析區塊
-                if enable_ai and active_api_key:
-                    st.subheader(f"🤖 {selected_ai} 深度分析報告")
-                    
-                    # 若已產出報告，或切換 AI 引擎時，會重新產生
-                    report_key = f"ai_report_{symbol}_{selected_ai}"
-                    
-                    if report_key not in st.session_state:
-                        with st.spinner(f"🧠 正在使用 {selected_ai} 分析 {symbol} 的交易記錄..."):
-                            analysis_data = prepare_ai_analysis_data(df, performance, stock_data, None, symbol)
-                            prompt = generate_ai_analysis_prompt(analysis_data)
-                            ai_report = call_ai_analysis(prompt, selected_ai, active_api_key)
-                            st.session_state[report_key] = ai_report
-                    
-                    st.markdown(st.session_state[report_key])
-                    st.divider()
+                # 如果還沒生成報告，顯示按鈕
+                if report_key not in st.session_state:
+                    if st.button(f"✨ 執行 {symbol} 覆盤分析", key=f"btn_ai_{symbol}", type="primary"):
+                        if not active_api_key:
+                            st.error("⚠️ 請先在左側欄位輸入對應的 API Key！")
+                        else:
+                            with st.spinner(f"🧠 分析中..."):
+                                profile = get_fmp_profile(symbol, fmp_api_key) if fmp_api_key else {}
+                                metrics = get_fmp_key_metrics(symbol, fmp_api_key) if fmp_api_key else []
+                                stock_data = {'historical': historical, 'profile': profile, 'key_metrics': metrics}
+                                
+                                analysis_data = prepare_ai_analysis_data(df, performance, stock_data, None, symbol)
+                                prompt = generate_ai_analysis_prompt(analysis_data)
+                                ai_report = call_ai_analysis(prompt, selected_ai, active_api_key)
+                                st.session_state[report_key] = ai_report
+                                
+                                st.rerun()
+                else:
+                    # 直接顯示暫存的報告結果，並包裝在一個乾淨的白色區塊中
+                    st.markdown(f"<div style='background-color:#FFF; padding:20px; border-radius:12px; border:1px solid #EBEBEB;'>{st.session_state[report_key]}</div>", unsafe_allow_html=True)
