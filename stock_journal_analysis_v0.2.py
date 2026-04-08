@@ -631,13 +631,22 @@ elif st.session_state.get('start_analysis', False) and csv_valid:
     else:
         st.info("目前無持倉部位。")
 
-    # --- 建立個股分頁 ---
+    # --- 建立個股分頁 (重新排序：持倉在前) ---
     st.markdown("<h4 style='margin-top:30px; color:#333;'>🔍 個股深度覆盤</h4>", unsafe_allow_html=True)
+    
+    # 取得目前有持倉的代碼清單
     inventory_symbols = [h['symbol'] for h in performance['current_holdings']]
+    
+    # 1. 將所有 Symbol 分為「持倉中」與「已結清」兩組
+    open_symbols = [s for s in symbols if s in inventory_symbols]
+    closed_symbols = [s for s in symbols if s not in inventory_symbols]
+    
+    # 2. 重新組合順序：有留單的(🟢)放在最前面，已結束的(⚪)放在後面
+    sorted_symbols = open_symbols + closed_symbols
     
     tab_titles = []
     stock_names = {}
-    for sym in symbols:
+    for sym in sorted_symbols: # 使用排序後的 sorted_symbols
         name = df[df['Symbol'] == sym]['Name'].iloc[0]
         stock_names[sym] = name
         if sym in inventory_symbols:
@@ -647,7 +656,8 @@ elif st.session_state.get('start_analysis', False) and csv_valid:
             
     tabs = st.tabs(tab_titles)
     
-    for i, symbol in enumerate(symbols):
+    # 注意：下方的迴圈也要同步改為 sorted_symbols，分頁內容才會與標題對齊
+    for i, symbol in enumerate(sorted_symbols):
         with tabs[i]:
             stock_name = stock_names[symbol]
             symbol_trade_history = performance['trade_history'].get(symbol, [])
